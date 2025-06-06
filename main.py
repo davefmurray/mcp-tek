@@ -21,9 +21,7 @@ app = FastAPI(
     title="JJ Auto API",
     description="FastAPI-based AI Assistant for Tekmetric integration",
     version="1.0.0",
-    servers=[
-        {"url": "https://web-production-1dc1.up.railway.app"}
-    ]
+    servers=[{"url": "https://web-production-1dc1.up.railway.app"}]
 )
 
 async def get_access_token():
@@ -64,12 +62,9 @@ async def get_open_repair_orders():
     }
 
     async with httpx.AsyncClient() as client:
-        try:
-            ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
-            ro_res.raise_for_status()
-            ros = ro_res.json().get("content", [])
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
+        ro_res.raise_for_status()
+        ros = ro_res.json().get("content", [])
 
         async def hydrate_ro(ro):
             vehicle = "Unknown"
@@ -94,6 +89,7 @@ async def get_open_repair_orders():
                     pass
 
             return {
+                "id": ro.get("id"),  # Tekmetric internal ID
                 "roNumber": ro.get("repairOrderNumber"),
                 "vehicle": vehicle or "Unknown",
                 "customer": customer or "Unknown",
@@ -114,12 +110,9 @@ async def get_jobs_by_repair_order(ro_id: int):
     }
 
     async with httpx.AsyncClient() as client:
-        try:
-            res = await client.get(f"{TEKMETRIC_BASE_URL}/jobs", headers=headers, params=params)
-            res.raise_for_status()
-            jobs = res.json().get("content", [])
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=res.status_code, detail=res.text)
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/jobs", headers=headers, params=params)
+        res.raise_for_status()
+        jobs = res.json().get("content", [])
 
         job_details = []
         for job in jobs:
@@ -150,3 +143,26 @@ async def get_jobs_by_repair_order(ro_id: int):
             "jobCount": len(job_details),
             "jobs": job_details
         }
+
+@app.get("/api/get_jobs_by_ro_number")
+async def get_jobs_by_ro_number(ro_number: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "shop": SHOP_ID,
+        "repairOrderStatusId": [1, 2],
+        "size": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
+        ro_res.raise_for_status()
+        ros = ro_res.json().get("content", [])
+
+        match = next((ro for ro in ros if ro.get("repairOrderNumber") == ro_number), None)
+        if not match:
+            raise HTTPException(status_code=404, detail=f"RO number {ro_number} not found")
+
+        real_id = match.get("id")
+
+    return await get_jobs_by_repair_order(real_id)
