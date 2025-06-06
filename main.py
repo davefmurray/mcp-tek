@@ -1,28 +1,35 @@
 import os
 import asyncio
+import base64
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import httpx
-import base64
 
 load_dotenv()
 
-app = FastAPI()
-
 TEKMETRIC_BASE_URL = "https://shop.tekmetric.com/api/v1"
-SHOP_ID = int(os.getenv("TEKMETRIC_SHOP_ID", 0))
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+SHOP_ID = int(os.getenv("TEKMETRIC_SHOP_ID", 0))
 
-if not SHOP_ID:
-    raise RuntimeError("TEKMETRIC_SHOP_ID not set")
 if not CLIENT_ID or not CLIENT_SECRET:
     raise RuntimeError("CLIENT_ID or CLIENT_SECRET not set")
+if not SHOP_ID:
+    raise RuntimeError("TEKMETRIC_SHOP_ID not set")
+
+app = FastAPI(
+    title="JJ Auto API",
+    description="FastAPI-based AI Assistant for Tekmetric integration",
+    version="1.0.0",
+    servers=[
+        {"url": "https://web-production-1dc1.up.railway.app"}
+    ]
+)
 
 async def get_access_token():
-    basic_auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+    auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
     headers = {
-        "Authorization": f"Basic {basic_auth}",
+        "Authorization": f"Basic {auth}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
     data = {"grant_type": "client_credentials"}
@@ -70,18 +77,18 @@ async def get_open_repair_orders():
 
             if ro.get("vehicleId"):
                 try:
-                    v = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles/{ro['vehicleId']}", headers=headers)
-                    v.raise_for_status()
-                    v = v.json()
+                    v_res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles/{ro['vehicleId']}", headers=headers)
+                    v_res.raise_for_status()
+                    v = v_res.json()
                     vehicle = f"{v.get('year', '')} {v.get('make', '')} {v.get('model', '')}".strip()
                 except:
                     pass
 
             if ro.get("customerId"):
                 try:
-                    c = await client.get(f"{TEKMETRIC_BASE_URL}/customers/{ro['customerId']}", headers=headers)
-                    c.raise_for_status()
-                    c = c.json()
+                    c_res = await client.get(f"{TEKMETRIC_BASE_URL}/customers/{ro['customerId']}", headers=headers)
+                    c_res.raise_for_status()
+                    c = c_res.json()
                     customer = f"{c.get('firstName', '')} {c.get('lastName', '')}".strip()
                 except:
                     pass
