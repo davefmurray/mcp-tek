@@ -114,7 +114,7 @@ app.include_router(inspections_router, prefix="/api/inspections", tags=["inspect
 app.include_router(job_clock_router, prefix="/api/jobs", tags=["job_clock"])
 app.include_router(labor_router, prefix="/api/labor", tags=["labor"])
 
-# Override OpenAPI schema to remove unwanted paths
+# Override OpenAPI schema to remove unwanted paths and include servers
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -123,6 +123,8 @@ def custom_openapi():
         version=app.version,
         routes=app.routes,
     )
+    # Retain server definitions
+    openapi_schema["servers"] = app.servers
     # Paths to hide from OpenAPI spec
     to_remove = [
         "/api/shops/{shop_id}",
