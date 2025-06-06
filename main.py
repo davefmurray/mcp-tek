@@ -95,3 +95,6 @@ app.include_router(employees_router, prefix="/api/employees", tags=["employees"]
 app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])
 app.include_router(repair_orders_router, prefix="/api/repair_orders", tags=["repair_orders"])
 app.include_router(jobs_router, prefix="/api/jobs", tags=["jobs"])
+# --- Canned Jobs Router ---
+from routers.canned_jobs import router as canned_jobs_router
+app.include_router(canned_jobs_router, prefix="/api/canned_jobs", tags=["canned_jobs"])
