@@ -8,12 +8,14 @@ import base64
 import logging
 import json
 
+# Load environment variables from .env
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
+# Create the MCP tool server
 mcp = FastMCP(
     name="Tekmetric API Tools",
     description="Tools for accessing real-time Tekmetric shop data via MCP.",
@@ -21,6 +23,7 @@ mcp = FastMCP(
     transport="sse",
 )
 
+# Auth helper
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
@@ -47,7 +50,8 @@ async def get_access_token() -> str | None:
             logger.exception("Auth failed")
             return None
 
-@mcp.tool(name="get_shops", description="Get all shops available under this account")
+# MCP tool to get shops
+@mcp.tool(name="get_shops", description="Get all shops available under this Tekmetric account")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
     if not token:
@@ -62,8 +66,22 @@ async def get_shops(ctx: Context) -> str:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+# Health check route
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
+# MCP manifest route for ChatGPT
+@mcp.custom_route("/mcp", methods=["GET"])
+async def mcp_manifest(request: Request) -> JSONResponse:
+    return JSONResponse({
+        "servers": {
+            "tekmetric": {
+                "type": "sse",
+                "url": "https://web-production-1dc1.up.railway.app/sse"
+            }
+        }
+    })
+
+# Entrypoint for uvicorn
 asgi_app = mcp.sse_app
