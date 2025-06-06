@@ -1,7 +1,8 @@
 import os
 import asyncio
 import base64
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body
 from dotenv import load_dotenv
 import httpx
 
@@ -24,7 +25,7 @@ app = FastAPI(
     servers=[{"url": "https://web-production-1dc1.up.railway.app"}]
 )
 
-async def get_access_token():
+async def get_access_token() -> str:
     auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth}",
@@ -273,7 +274,7 @@ async def get_full_customer_history(id: int):
             "vehicles": vehicles_with_data
         }
 
-# ✅ New: GET /api/get_vehicles_by_customer
+# New: GET /api/get_vehicles_by_customer
 @app.get("/api/get_vehicles_by_customer")
 async def get_vehicles_by_customer(customer_id: int):
     token = await get_access_token()
@@ -295,7 +296,7 @@ async def get_vehicles_by_customer(customer_id: int):
             })
         return simplified
 
-# ✅ New: GET /api/get_vehicle
+# New: GET /api/get_vehicle
 @app.get("/api/get_vehicle")
 async def get_vehicle(vehicle_id: int):
     token = await get_access_token()
@@ -307,9 +308,9 @@ async def get_vehicle(vehicle_id: int):
         res.raise_for_status()
         return res.json()
 
-# ✅ New: GET /api/get_service_by_vehicle
+# New: GET /api/get_service_by_vehicle
 @app.get("/api/get_service_by_vehicle")
-async def get_service_by_vehicle(vehicle_id: int):
+async def get_service_by_vehicle(vehicle_id: int, year: int = Query(None, description="YYYY to filter ROs")):
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     params = {"shop": SHOP_ID, "vehicleId": vehicle_id, "size": 100}
@@ -317,11 +318,85 @@ async def get_service_by_vehicle(vehicle_id: int):
         res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
         res.raise_for_status()
         ros = res.json().get("content", [])
-        simplified = []
+        filtered = []
         for ro in ros:
-            simplified.append({
+            created = ro.get("createdDate", "")
+            if year and not created.startswith(str(year)):
+                continue
+            filtered.append({
                 "roNumber": ro.get("repairOrderNumber"),
                 "status": ro.get("repairOrderStatus", {}).get("name", "Unknown"),
-                "lastUpdated": ro.get("updatedDate")
+                "createdDate": created
             })
-        return simplified
+        return filtered
+
+# New: GET /api/get_appointments
+@app.get("/api/get_appointments")
+async def get_appointments(
+    start: str = Query(..., description="Start date/time in ISO format"),
+    end: str = Query(..., description="End date/time in ISO format")
+):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"shop": SHOP_ID, "start": start, "end": end}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/appointments", headers=headers, params=params)
+        res.raise_for_status()
+        return res.json().get("content", [])
+
+# New: GET /api/get_appointment
+@app.get("/api/get_appointment")
+async def get_appointment(appointment_id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/appointments/{appointment_id}", headers=headers)
+        if res.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Appointment ID {appointment_id} not found")
+        res.raise_for_status()
+        return res.json()
+
+# New: POST /api/create_appointment
+@app.post("/api/create_appointment")
+async def create_appointment(payload: dict = Body(..., description="Appointment payload")):
+    token = await get_access_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    payload["shopId"] = SHOP_ID
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{TEKMETRIC_BASE_URL}/appointments", headers=headers, json=payload)
+        if res.status_code >= 400:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+
+# New: PATCH /api/update_appointment
+@app.patch("/api/update_appointment")
+async def update_appointment(
+    appointment_id: int = Query(..., description="ID of appointment to update"),
+    payload: dict = Body(..., description="Fields to update")
+):
+    token = await get_access_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    async with httpx.AsyncClient() as client:
+        res = await client.patch(f"{TEKMETRIC_BASE_URL}/appointments/{appointment_id}", headers=headers, json=payload)
+        if res.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Appointment ID {appointment_id} not found")
+        res.raise_for_status()
+        return res.json()
+
+# New: DELETE /api/delete_appointment
+@app.delete("/api/delete_appointment")
+async def delete_appointment(appointment_id: int = Query(..., description="ID of appointment to delete")):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(f"{TEKMETRIC_BASE_URL}/appointments/{appointment_id}", headers=headers)
+        if res.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Appointment ID {appointment_id} not found")
+        res.raise_for_status()
+        return {"detail": f"Appointment {appointment_id} deleted successfully"}
