@@ -206,30 +206,25 @@ async def get_full_customer_history(id: int):
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
-        
-        # Replace direct call with paginated customer lookup
         customer = None
         page = 0
         while True:
-            cust_params = {"shop": SHOP_ID, "size": 100, "page": page}
-            cust_res = await client.get(f"{TEKMETRIC_BASE_URL}/customers", headers=headers, params=cust_params)
-            cust_res.raise_for_status()
-            cust_list = cust_res.json().get("content", [])
-            if not cust_list:
+            params = {"shop": SHOP_ID, "size": 100, "page": page}
+            res = await client.get(f"{TEKMETRIC_BASE_URL}/customers", headers=headers, params=params)
+            res.raise_for_status()
+            customers = res.json().get("content", [])
+            if not customers:
                 break
-            match = next((c for c in cust_list if c.get("id") == id), None)
-            if match:
-                customer = match
+            for c in customers:
+                if c.get("id") == id:
+                    customer = c
+                    break
+            if customer:
                 break
             page += 1
 
         if not customer:
             raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
-    , headers=headers)
-        if customer_res.status_code == 404:
-            raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
-        customer_res.raise_for_status()
-        customer = customer_res.json()
 
         vehicle_params = {"shop": SHOP_ID, "customerId": id, "size": 100}
         vehicle_res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles", headers=headers, params=vehicle_params)
