@@ -1,0 +1,14 @@
+Action Item for CustomGPT:
+https://web-production-1dc1.up.railway.app/openapi.json
+ 
+Test it in a browser:
+Live production Railway test URLs:
+
+✅ All open ROs:
+https://web-production-1dc1.up.railway.app/api/get_open_repair_orders
+
+✅ Jobs by RO number (your shop format):
+https://web-production-1dc1.up.railway.app/api/get_jobs_by_ro_number?ro_number=21814
+
+✅ Health check:
+https://web-production-1dc1.up.railway.app/api/health
