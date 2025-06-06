@@ -21,48 +21,46 @@ app = FastAPI()
 _token_cache = {"access_token": None, "expires_at": 0}
 
 async def get_access_token() -> str:
-    """
-    Retrieves and caches OAuth2 token for Tekmetric.
-    """
-    global _token_cache
-    # Return cached token if valid
+    # Return cached token if still valid
     if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
         return _token_cache["access_token"]
-
-    # Request new token
+    # Ensure credentials exist
     if not CLIENT_ID or not CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="Missing CLIENT_ID or CLIENT_SECRET env vars")
-
+        raise HTTPException(status_code=500, detail="Missing CLIENT_ID or CLIENT_SECRET")
+    # Request new token
     auth_header = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth_header}",
         "Content-Type": "application/json"
     }
     data = {"grant_type": "client_credentials"}
-
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{TEKMETRIC_BASE_URL}/oauth/token", headers=headers, json=data)
         res.raise_for_status()
         token_data = res.json()
-
     access_token = token_data.get("access_token")
     expires_in   = token_data.get("expires_in", 0)
-
     if not access_token:
         raise HTTPException(status_code=500, detail="No access_token returned")
-
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"]   = time.time() + expires_in - 10
-
     return access_token
 
 @app.get("/api/debug/token", summary="Debug Token Retrieval")
 async def debug_token():
     """
     Test endpoint to verify OAuth token retrieval.
+    Returns token length or error message.
     """
-    token = await get_access_token()
-    return {"token_length": len(token)}
+    try:
+        token = await get_access_token()
+        return {"token_length": len(token)}
+    except HTTPException:
+        # Propagate known HTTP exceptions
+        raise
+    except Exception as e:
+        # Return unexpected errors for debugging
+        return {"error": str(e)}
 
 @app.get("/api/health", summary="Health Check")
 async def health_check():
