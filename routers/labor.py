@@ -1,20 +1,31 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 import httpx
 from main import get_access_token, TEKMETRIC_BASE_URL
 
 router = APIRouter()
 
+class LaborUpdateRequest(BaseModel):
+    """
+    Request body for updating a labor entry's technician.
+    """
+    technicianId: int = Field(..., description="Employee ID of the technician to assign")
+
 @router.patch("/{labor_id}", summary="Update Labor Technician")
 async def update_labor(
     labor_id: int,
-    technicianId: int = Body(..., description="Employee ID of the technician")
+    body: LaborUpdateRequest
 ):
+    """
+    Updates the technician for a specific labor entry.
+    Tekmetric endpoint: PATCH /api/v1/labor/{id}
+    """
     token = await get_access_token()
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    payload = {"technicianId": technicianId}
+    payload = body.dict()
     async with httpx.AsyncClient() as client:
         res = await client.patch(
             f"{TEKMETRIC_BASE_URL}/labor/{labor_id}",
