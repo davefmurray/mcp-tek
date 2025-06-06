@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 
-# Load environment variables
+# Load .env
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tekmetric")
@@ -15,7 +15,7 @@ logger = logging.getLogger("tekmetric")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# ✅ FastAPI app with servers metadata for GPT Builder
+# ✅ FastAPI app with OpenAPI servers block
 app = FastAPI(
     title="Tekmetric API",
     version="1.0.0",
@@ -24,11 +24,11 @@ app = FastAPI(
     ]
 )
 
-# 🔐 Get Tekmetric access token
+# 🔐 Get access token
 async def get_access_token() -> str | None:
     logger.info("🔐 Getting Tekmetric access token")
     if not CLIENT_ID or not CLIENT_SECRET:
-        logger.error("Missing CLIENT_ID or CLIENT_SECRET")
+        logger.error("❌ CLIENT_ID or CLIENT_SECRET missing")
         return None
 
     encoded = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
@@ -45,15 +45,15 @@ async def get_access_token() -> str | None:
                 data=data,
                 headers=headers
             )
-            logger.info(f"🔑 Token response status: {resp.status_code}")
-            logger.info(f"🔑 Token response body: {await resp.aread()}")
+            logger.info(f"🔑 Token status: {resp.status_code}")
+            logger.info(f"🔑 Token body: {await resp.aread()}")
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
-            logger.exception("❌ Failed to fetch access token")
+            logger.exception("❌ Failed to get access token")
             return None
 
-# ✅ /api/get_shops endpoint
+# ✅ /api/get_shops
 @app.get("/api/get_shops", summary="Get Shops")
 async def get_shops():
     token = await get_access_token()
@@ -65,13 +65,13 @@ async def get_shops():
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
             logger.info(f"📦 Shops response status: {resp.status_code}")
-            data = resp.json()  # ✅ no await
+            data = resp.json()
             return JSONResponse(content=data)
         except Exception as e:
             logger.exception("❌ Failed to fetch shops")
             return JSONResponse(content={"error": str(e)}, status_code=500)
 
-# ✅ /api/get_open_repair_orders endpoint
+# ✅ /api/get_open_repair_orders (fixed version)
 @app.get("/api/get_open_repair_orders", summary="Get Open Repair Orders")
 async def get_open_repair_orders():
     token = await get_access_token()
@@ -79,12 +79,18 @@ async def get_open_repair_orders():
         return JSONResponse(content={"error": "Unable to authenticate"}, status_code=401)
 
     headers = {"Authorization": f"Bearer {token}"}
+    url = "https://shop.tekmetric.com/api/v1/repair-orders?status=open"
+
     async with httpx.AsyncClient() as client:
         try:
-            url = "https://shop.tekmetric.com/api/v1/repair-orders?status=open"
             resp = await client.get(url, headers=headers)
             logger.info(f"🛠️ Open ROs response status: {resp.status_code}")
             data = resp.json()
+
+            if not isinstance(data, list):
+                logger.error(f"⚠️ Unexpected data format: {data}")
+                return JSONResponse(content={"error": "Unexpected response format from Tekmetric"}, status_code=502)
+
             simplified = [
                 {
                     "roNumber": ro.get("repairOrderNumber"),
@@ -95,7 +101,9 @@ async def get_open_repair_orders():
                 }
                 for ro in data
             ]
+            logger.info(f"✅ Returning {len(simplified)} open ROs")
             return JSONResponse(content=simplified)
+
         except Exception as e:
             logger.exception("❌ Failed to fetch open repair orders")
             return JSONResponse(content={"error": str(e)}, status_code=500)
