@@ -199,3 +199,62 @@ async def get_customer_by_id(id: int):
                     }
             page += 1
         raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
+
+@app.get("/api/get_full_customer_history")
+async def get_full_customer_history(id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient() as client:
+        customer_res = await client.get(f"{TEKMETRIC_BASE_URL}/customers/{id}", headers=headers)
+        if customer_res.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
+        customer_res.raise_for_status()
+        customer = customer_res.json()
+
+        vehicle_params = {"shop": SHOP_ID, "customerId": id, "size": 100}
+        vehicle_res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles", headers=headers, params=vehicle_params)
+        vehicle_res.raise_for_status()
+        vehicles = vehicle_res.json().get("content", [])
+
+        async def get_ros_and_jobs(vehicle):
+            ro_params = {"shop": SHOP_ID, "vehicleId": vehicle["id"], "size": 100}
+            ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=ro_params)
+            ro_res.raise_for_status()
+            ros = ro_res.json().get("content", [])
+
+            async def get_jobs(ro):
+                job_params = {"shop": SHOP_ID, "repairOrderId": ro["id"], "size": 100}
+                job_res = await client.get(f"{TEKMETRIC_BASE_URL}/jobs", headers=headers, params=job_params)
+                job_res.raise_for_status()
+                jobs = job_res.json().get("content", [])
+                return {
+                    "roNumber": ro.get("repairOrderNumber"),
+                    "status": ro.get("repairOrderStatus", {}).get("name"),
+                    "jobs": [
+                        {"jobName": j.get("name"), "techId": j.get("technicianId")}
+                        for j in jobs
+                    ]
+                }
+
+            jobs_nested = await asyncio.gather(*(get_jobs(ro) for ro in ros))
+            return {
+                "vehicleId": vehicle["id"],
+                "year": vehicle.get("year"),
+                "make": vehicle.get("make"),
+                "model": vehicle.get("model"),
+                "repairOrders": jobs_nested
+            }
+
+        vehicles_with_data = await asyncio.gather(*(get_ros_and_jobs(v) for v in vehicles))
+
+        return {
+            "customer": {
+                "id": customer.get("id"),
+                "name": f"{customer.get('firstName', '')} {customer.get('lastName', '')}".strip(),
+                "email": customer.get("email", "N/A"),
+                "phone": customer.get("phone", [{}])[0].get("number", "N/A"),
+                "address": customer.get("address", {}).get("fullAddress", "N/A")
+            },
+            "vehicles": vehicles_with_data
+        }
