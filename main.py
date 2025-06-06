@@ -119,3 +119,23 @@ async def get_open_repair_orders():
 @app.get("/healthz", summary="Health Check")
 async def healthz():
     return {"status": "ok"}
+
+def get_customer(customer_id, base_url, access_token):
+    url = f"{base_url}/api/v1/customers/{customer_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Customer fetch failed for ID {customer_id}: {response.status_code} - {response.text}")
+        return {"firstName": "Unknown", "lastName": ""}
+
+def get_vehicle(vehicle_id, base_url, access_token):
+    url = f"{base_url}/api/v1/vehicles/{vehicle_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Vehicle fetch failed for ID {vehicle_id}: {response.status_code} - {response.text}")
+        return {"year": "", "make": "Unknown", "model": ""}
