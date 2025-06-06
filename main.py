@@ -8,29 +8,33 @@ import base64
 import logging
 import json
 
+# Load environment variables
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
+# Create MCP server
 mcp = FastMCP(
     name="Tekmetric API Tools",
-    description="MCP tools to access live Tekmetric shop data.",
+    description="Live Tekmetric access via MCP tools.",
     streamable=True,
     transport="sse",
 )
 
-# 🔐 Token exchange
+# 🔐 Get access token from Tekmetric
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
 
     encoded = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+
     headers = {
         "Authorization": f"Basic {encoded}",
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
     }
+
     data = {"grant_type": "client_credentials"}
 
     async with httpx.AsyncClient() as client:
@@ -43,10 +47,10 @@ async def get_access_token() -> str | None:
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
-            logger.exception("Auth failed")
+            logger.exception("Failed to get access token")
             return None
 
-# ✅ Actual MCP Tool
+# 🧰 Live MCP Tool: Get shops
 @mcp.tool(name="get_shops", description="Get all shops linked to your Tekmetric account.")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
@@ -54,6 +58,7 @@ async def get_shops(ctx: Context) -> str:
         return json.dumps({"error": "Unable to authenticate"})
 
     headers = {"Authorization": f"Bearer {token}"}
+
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
@@ -67,7 +72,7 @@ async def get_shops(ctx: Context) -> str:
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ GPT Builder Manifest — with dummy path to pass validation
+# ✅ GPT-compatible manifest
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
@@ -79,7 +84,8 @@ async def mcp_manifest(request: Request) -> JSONResponse:
         "paths": {
             "/fake": {
                 "get": {
-                    "summary": "Fake endpoint to pass GPT Builder validation",
+                    "operationId": "fakeGet",
+                    "summary": "Fake endpoint to make GPT Builder happy",
                     "responses": {
                         "200": {
                             "description": "Success"
