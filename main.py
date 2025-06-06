@@ -1,8 +1,9 @@
 import os
 import asyncio
 import base64
-from fastapi import FastAPI, HTTPException, Query
-from fastapi import Body
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, Query, Body
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import httpx
 
@@ -25,6 +26,27 @@ app = FastAPI(
     servers=[{"url": "https://web-production-1dc1.up.railway.app"}]
 )
 
+class AppointmentCreate(BaseModel):
+    customerId: int = Field(..., description="Tekmetric customer ID")
+    vehicleId: int = Field(..., description="Tekmetric vehicle ID")
+    startTime: str = Field(..., description="ISO-8601 datetime when appointment starts")
+    endTime: str = Field(..., description="ISO-8601 datetime when appointment ends")
+    title: Optional[str] = Field(None, description="Short title for the appointment")
+    description: Optional[str] = Field(None, description="Longer description or notes")
+    dropoffTime: Optional[str] = Field(None, description="ISO-8601 datetime for actual drop-off, if known")
+    pickupTime: Optional[str] = Field(None, description="ISO-8601 datetime for actual pick-up, if known")
+    rideOption: Optional[str] = Field(None, description="e.g. 'shuttle', 'loaner', etc.")
+
+class AppointmentUpdate(BaseModel):
+    startTime: Optional[str] = Field(None, description="ISO-8601 datetime when appointment starts")
+    endTime: Optional[str] = Field(None, description="ISO-8601 datetime when appointment ends")
+    title: Optional[str] = Field(None, description="Short title for the appointment")
+    description: Optional[str] = Field(None, description="Longer description or notes")
+    dropoffTime: Optional[str] = Field(None, description="ISO-8601 datetime for actual drop-off")
+    pickupTime: Optional[str] = Field(None, description="ISO-8601 datetime for actual pick-up")
+    rideOption: Optional[str] = Field(None, description="e.g. 'shuttle', 'loaner', etc.")
+
+
 async def get_access_token() -> str:
     auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
     headers = {
@@ -37,9 +59,11 @@ async def get_access_token() -> str:
         res.raise_for_status()
         return res.json()["access_token"]
 
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}
+
 
 @app.get("/api/get_shops")
 async def get_shops():
@@ -49,6 +73,7 @@ async def get_shops():
         res = await client.get(f"{TEKMETRIC_BASE_URL}/shops", headers=headers)
         res.raise_for_status()
         return res.json()
+
 
 @app.get("/api/get_open_repair_orders")
 async def get_open_repair_orders():
@@ -70,7 +95,10 @@ async def get_open_repair_orders():
             customer = "Unknown"
             if ro.get("vehicleId"):
                 try:
-                    v_res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles/{ro['vehicleId']}", headers=headers)
+                    v_res = await client.get(
+                        f"{TEKMETRIC_BASE_URL}/vehicles/{ro['vehicleId']}",
+                        headers=headers
+                    )
                     v_res.raise_for_status()
                     v = v_res.json()
                     vehicle = f"{v.get('year', '')} {v.get('make', '')} {v.get('model', '')}".strip()
@@ -78,7 +106,10 @@ async def get_open_repair_orders():
                     pass
             if ro.get("customerId"):
                 try:
-                    c_res = await client.get(f"{TEKMETRIC_BASE_URL}/customers/{ro['customerId']}", headers=headers)
+                    c_res = await client.get(
+                        f"{TEKMETRIC_BASE_URL}/customers/{ro['customerId']}",
+                        headers=headers
+                    )
                     c_res.raise_for_status()
                     c = c_res.json()
                     customer = f"{c.get('firstName', '')} {c.get('lastName', '')}".strip()
@@ -96,6 +127,7 @@ async def get_open_repair_orders():
 
         return await asyncio.gather(*(hydrate_ro(ro) for ro in ros))
 
+
 @app.get("/api/get_jobs_by_ro_number")
 async def get_jobs_by_ro_number(ro_number: int):
     token = await get_access_token()
@@ -109,6 +141,7 @@ async def get_jobs_by_ro_number(ro_number: int):
         if not match:
             raise HTTPException(status_code=404, detail=f"RO #{ro_number} not found")
         return await get_jobs_by_repair_order(match.get("id"))
+
 
 @app.get("/api/get_jobs_by_ro")
 async def get_jobs_by_repair_order(ro_id: int):
@@ -124,7 +157,10 @@ async def get_jobs_by_repair_order(ro_id: int):
             tech_name = "Unassigned"
             if job.get("technicianId"):
                 try:
-                    tech_res = await client.get(f"{TEKMETRIC_BASE_URL}/employees/{job['technicianId']}", headers=headers)
+                    tech_res = await client.get(
+                        f"{TEKMETRIC_BASE_URL}/employees/{job['technicianId']}",
+                        headers=headers
+                    )
                     tech_res.raise_for_status()
                     tech = tech_res.json()
                     tech_name = f"{tech.get('firstName', '')} {tech.get('lastName', '')}".strip()
@@ -142,6 +178,7 @@ async def get_jobs_by_repair_order(ro_id: int):
                 "parts": job.get("parts", [])
             })
         return {"repairOrderId": ro_id, "jobCount": len(output), "jobs": output}
+
 
 @app.get("/api/get_customer")
 async def get_customer(search: str):
@@ -168,6 +205,7 @@ async def get_customer(search: str):
                 "updated": c.get("updatedDate")
             })
         return {"query": search, "matchCount": len(results), "results": results}
+
 
 @app.get("/api/get_customer_by_id")
 async def get_customer_by_id(id: int):
@@ -200,6 +238,7 @@ async def get_customer_by_id(id: int):
                     }
             page += 1
         raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
+
 
 @app.get("/api/get_full_customer_history")
 async def get_full_customer_history(id: int):
@@ -274,7 +313,7 @@ async def get_full_customer_history(id: int):
             "vehicles": vehicles_with_data
         }
 
-# New: GET /api/get_vehicles_by_customer
+
 @app.get("/api/get_vehicles_by_customer")
 async def get_vehicles_by_customer(customer_id: int):
     token = await get_access_token()
@@ -296,7 +335,7 @@ async def get_vehicles_by_customer(customer_id: int):
             })
         return simplified
 
-# New: GET /api/get_vehicle
+
 @app.get("/api/get_vehicle")
 async def get_vehicle(vehicle_id: int):
     token = await get_access_token()
@@ -308,9 +347,12 @@ async def get_vehicle(vehicle_id: int):
         res.raise_for_status()
         return res.json()
 
-# New: GET /api/get_service_by_vehicle
+
 @app.get("/api/get_service_by_vehicle")
-async def get_service_by_vehicle(vehicle_id: int, year: int = Query(None, description="YYYY to filter ROs")):
+async def get_service_by_vehicle(
+    vehicle_id: int,
+    year: Optional[int] = Query(None, description="YYYY to filter ROs")
+):
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     params = {"shop": SHOP_ID, "vehicleId": vehicle_id, "size": 100}
@@ -330,10 +372,10 @@ async def get_service_by_vehicle(vehicle_id: int, year: int = Query(None, descri
             })
         return filtered
 
-# New: GET /api/get_appointments
+
 @app.get("/api/get_appointments")
 async def get_appointments(
-    start: str = Query(..., description="Start date/time in ISO format"),
+    start: str = Query(..., description="Start date/time in ISO format (e.g. 2025-06-10T09:00:00Z)"),
     end: str = Query(..., description="End date/time in ISO format")
 ):
     token = await get_access_token()
@@ -344,7 +386,7 @@ async def get_appointments(
         res.raise_for_status()
         return res.json().get("content", [])
 
-# New: GET /api/get_appointment
+
 @app.get("/api/get_appointment")
 async def get_appointment(appointment_id: int):
     token = await get_access_token()
@@ -356,42 +398,46 @@ async def get_appointment(appointment_id: int):
         res.raise_for_status()
         return res.json()
 
-# New: POST /api/create_appointment
+
 @app.post("/api/create_appointment")
-async def create_appointment(payload: dict = Body(..., description="Appointment payload")):
+async def create_appointment(payload: AppointmentCreate):
     token = await get_access_token()
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    payload["shopId"] = SHOP_ID
+    data = payload.dict()
+    data["shopId"] = SHOP_ID
     async with httpx.AsyncClient() as client:
-        res = await client.post(f"{TEKMETRIC_BASE_URL}/appointments", headers=headers, json=payload)
+        res = await client.post(f"{TEKMETRIC_BASE_URL}/appointments", headers=headers, json=data)
         if res.status_code >= 400:
             raise HTTPException(status_code=res.status_code, detail=res.text)
         return res.json()
 
-# New: PATCH /api/update_appointment
+
 @app.patch("/api/update_appointment")
 async def update_appointment(
     appointment_id: int = Query(..., description="ID of appointment to update"),
-    payload: dict = Body(..., description="Fields to update")
+    payload: AppointmentUpdate = Body(..., description="Fields to update")
 ):
     token = await get_access_token()
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
+    data = payload.dict(exclude_unset=True)
     async with httpx.AsyncClient() as client:
-        res = await client.patch(f"{TEKMETRIC_BASE_URL}/appointments/{appointment_id}", headers=headers, json=payload)
+        res = await client.patch(f"{TEKMETRIC_BASE_URL}/appointments/{appointment_id}", headers=headers, json=data)
         if res.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Appointment ID {appointment_id} not found")
         res.raise_for_status()
         return res.json()
 
-# New: DELETE /api/delete_appointment
+
 @app.delete("/api/delete_appointment")
-async def delete_appointment(appointment_id: int = Query(..., description="ID of appointment to delete")):
+async def delete_appointment(
+    appointment_id: int = Query(..., description="ID of appointment to delete")
+):
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient() as client:
