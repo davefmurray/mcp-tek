@@ -21,27 +21,40 @@ app = FastAPI()
 _token_cache = {"access_token": None, "expires_at": 0}
 
 async def get_access_token() -> str:
+    """
+    Retrieves (and caches) an OAuth2 bearer token for Tekmetric,
+    using form-encoded client credentials flow.
+    """
+    global _token_cache
+
     # Return cached token if still valid
     if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
         return _token_cache["access_token"]
-    # Ensure credentials exist
+
+    # Ensure client credentials are set
     if not CLIENT_ID or not CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Missing CLIENT_ID or CLIENT_SECRET")
-    # Request new token
+
+    # Form-encoded request for token
     auth_header = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth_header}",
-        "Content-Type": "application/json"
-    }
-    data = {"grant_type": "client_credentials"}
+    headers = {"Authorization": f"Basic {auth_header}"}
+    form = {"grant_type": "client_credentials"}
+
     async with httpx.AsyncClient() as client:
-        res = await client.post(f"{TEKMETRIC_BASE_URL}/oauth/token", headers=headers, json=data)
+        res = await client.post(
+            f"{TEKMETRIC_BASE_URL}/oauth/token",
+            headers=headers,
+            data=form
+        )
         res.raise_for_status()
         token_data = res.json()
+
     access_token = token_data.get("access_token")
     expires_in   = token_data.get("expires_in", 0)
     if not access_token:
         raise HTTPException(status_code=500, detail="No access_token returned")
+
+    # Cache with a slight buffer
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"]   = time.time() + expires_in - 10
     return access_token
