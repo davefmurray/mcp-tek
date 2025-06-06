@@ -59,7 +59,7 @@ async def get_open_repair_orders():
     headers = {"Authorization": f"Bearer {token}"}
     params = {
         "shop": SHOP_ID,
-        "repairOrderStatusId": [1, 2],  # Estimate + Work-In-Progress
+        "repairOrderStatusId": [1, 2],
         "size": 100
     }
 
@@ -102,3 +102,51 @@ async def get_open_repair_orders():
             }
 
         return await asyncio.gather(*(hydrate_ro(ro) for ro in ros))
+
+@app.get("/api/get_jobs_by_ro")
+async def get_jobs_by_repair_order(ro_id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "shop": SHOP_ID,
+        "repairOrderId": ro_id,
+        "size": 100
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.get(f"{TEKMETRIC_BASE_URL}/jobs", headers=headers, params=params)
+            res.raise_for_status()
+            jobs = res.json().get("content", [])
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+
+        job_details = []
+        for job in jobs:
+            tech_name = "Unassigned"
+            if job.get("technicianId"):
+                try:
+                    tech_res = await client.get(f"{TEKMETRIC_BASE_URL}/employees/{job['technicianId']}", headers=headers)
+                    tech_res.raise_for_status()
+                    tech = tech_res.json()
+                    tech_name = f"{tech.get('firstName', '')} {tech.get('lastName', '')}".strip()
+                except:
+                    pass
+
+            job_details.append({
+                "jobName": job.get("name"),
+                "tech": tech_name,
+                "note": job.get("note"),
+                "authorized": job.get("authorized"),
+                "laborTotal": job.get("laborTotal"),
+                "partsTotal": job.get("partsTotal"),
+                "status": "Complete" if job.get("archived") else "In Progress",
+                "labor": job.get("labor", []),
+                "parts": job.get("parts", [])
+            })
+
+        return {
+            "repairOrderId": ro_id,
+            "jobCount": len(job_details),
+            "jobs": job_details
+        }
