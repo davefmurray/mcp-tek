@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 
-# Load .env
+# Load environment variables
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tekmetric")
@@ -15,7 +15,7 @@ logger = logging.getLogger("tekmetric")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# ✅ FastAPI app with GPT-compatible OpenAPI
+# ✅ FastAPI app with servers metadata for GPT Builder
 app = FastAPI(
     title="Tekmetric API",
     version="1.0.0",
@@ -24,7 +24,7 @@ app = FastAPI(
     ]
 )
 
-# 🔐 Auth helper
+# 🔐 Get Tekmetric access token
 async def get_access_token() -> str | None:
     logger.info("🔐 Getting Tekmetric access token")
     if not CLIENT_ID or not CLIENT_SECRET:
@@ -46,14 +46,14 @@ async def get_access_token() -> str | None:
                 headers=headers
             )
             logger.info(f"🔑 Token response status: {resp.status_code}")
-            logger.info(f"🔑 Token body: {await resp.aread()}")
+            logger.info(f"🔑 Token response body: {await resp.aread()}")
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
             logger.exception("❌ Failed to fetch access token")
             return None
 
-# ✅ Main endpoint: /api/get_shops
+# ✅ /api/get_shops endpoint
 @app.get("/api/get_shops", summary="Get Shops")
 async def get_shops():
     token = await get_access_token()
@@ -65,10 +65,39 @@ async def get_shops():
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
             logger.info(f"📦 Shops response status: {resp.status_code}")
-            data = resp.json()  # ✅ FIXED: removed `await`
+            data = resp.json()  # ✅ no await
             return JSONResponse(content=data)
         except Exception as e:
             logger.exception("❌ Failed to fetch shops")
+            return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# ✅ /api/get_open_repair_orders endpoint
+@app.get("/api/get_open_repair_orders", summary="Get Open Repair Orders")
+async def get_open_repair_orders():
+    token = await get_access_token()
+    if not token:
+        return JSONResponse(content={"error": "Unable to authenticate"}, status_code=401)
+
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        try:
+            url = "https://shop.tekmetric.com/api/v1/repair-orders?status=open"
+            resp = await client.get(url, headers=headers)
+            logger.info(f"🛠️ Open ROs response status: {resp.status_code}")
+            data = resp.json()
+            simplified = [
+                {
+                    "roNumber": ro.get("repairOrderNumber"),
+                    "vehicle": f"{ro['vehicle']['year']} {ro['vehicle']['make']} {ro['vehicle']['model']}",
+                    "customer": ro['customer']['fullName'],
+                    "status": ro.get("status"),
+                    "lastUpdated": ro.get("lastUpdatedDate")
+                }
+                for ro in data
+            ]
+            return JSONResponse(content=simplified)
+        except Exception as e:
+            logger.exception("❌ Failed to fetch open repair orders")
             return JSONResponse(content={"error": str(e)}, status_code=500)
 
 # ✅ Health check
