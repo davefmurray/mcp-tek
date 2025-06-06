@@ -89,7 +89,7 @@ async def get_open_repair_orders():
                     pass
 
             return {
-                "id": ro.get("id"),  # Tekmetric internal ID
+                "id": ro.get("id"),
                 "roNumber": ro.get("repairOrderNumber"),
                 "vehicle": vehicle or "Unknown",
                 "customer": customer or "Unknown",
@@ -166,3 +166,41 @@ async def get_jobs_by_ro_number(ro_number: int):
         real_id = match.get("id")
 
     return await get_jobs_by_repair_order(real_id)
+
+@app.get("/api/get_customer")
+async def get_customer(search: str):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "shop": SHOP_ID,
+        "search": search,
+        "size": 10
+    }
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/customers", headers=headers, params=params)
+        res.raise_for_status()
+        customers = res.json().get("content", [])
+
+        results = []
+        for c in customers:
+            phone = c.get("phone", [])
+            phone_str = phone[0]["number"] if phone else "N/A"
+
+            results.append({
+                "id": c.get("id"),
+                "name": f"{c.get('firstName', '')} {c.get('lastName', '')}".strip(),
+                "email": c.get("email", "N/A"),
+                "phone": phone_str,
+                "okForMarketing": c.get("okForMarketing"),
+                "notes": c.get("notes", None),
+                "address": c.get("address", {}).get("fullAddress", "N/A"),
+                "created": c.get("createdDate"),
+                "updated": c.get("updatedDate")
+            })
+
+        return {
+            "query": search,
+            "matchCount": len(results),
+            "results": results
+        }
