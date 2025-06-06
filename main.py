@@ -272,3 +272,56 @@ async def get_full_customer_history(id: int):
             },
             "vehicles": vehicles_with_data
         }
+
+# ✅ New: GET /api/get_vehicles_by_customer
+@app.get("/api/get_vehicles_by_customer")
+async def get_vehicles_by_customer(customer_id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"shop": SHOP_ID, "customerId": customer_id, "size": 100}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles", headers=headers, params=params)
+        res.raise_for_status()
+        vehicles = res.json().get("content", [])
+        simplified = []
+        for v in vehicles:
+            simplified.append({
+                "vehicleId": v.get("id"),
+                "year": v.get("year"),
+                "make": v.get("make"),
+                "model": v.get("model"),
+                "vin": v.get("vin", "N/A"),
+                "licensePlate": v.get("licensePlate", "N/A")
+            })
+        return simplified
+
+# ✅ New: GET /api/get_vehicle
+@app.get("/api/get_vehicle")
+async def get_vehicle(vehicle_id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles/{vehicle_id}", headers=headers)
+        if res.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Vehicle ID {vehicle_id} not found")
+        res.raise_for_status()
+        return res.json()
+
+# ✅ New: GET /api/get_service_by_vehicle
+@app.get("/api/get_service_by_vehicle")
+async def get_service_by_vehicle(vehicle_id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"shop": SHOP_ID, "vehicleId": vehicle_id, "size": 100}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
+        res.raise_for_status()
+        ros = res.json().get("content", [])
+        simplified = []
+        for ro in ros:
+            simplified.append({
+                "roNumber": ro.get("repairOrderNumber"),
+                "status": ro.get("repairOrderStatus", {}).get("name", "Unknown"),
+                "lastUpdated": ro.get("updatedDate")
+            })
+        return simplified
