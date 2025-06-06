@@ -120,22 +120,154 @@ async def get_open_repair_orders():
 async def healthz():
     return {"status": "ok"}
 
-def get_customer(customer_id, base_url, access_token):
-    url = f"{base_url}/api/v1/customers/{customer_id}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Customer fetch failed for ID {customer_id}: {response.status_code} - {response.text}")
-        return {"firstName": "Unknown", "lastName": ""}
+import os
+import requests
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
-def get_vehicle(vehicle_id, base_url, access_token):
-    url = f"{base_url}/api/v1/vehicles/{vehicle_id}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Vehicle fetch failed for ID {vehicle_id}: {response.status_code} - {response.text}")
-        return {"year": "", "make": "Unknown", "model": ""}
+app = FastAPI()
+
+BASE_URL = "https://api.tekmetric.com/api/v1"
+ACCESS_TOKEN = os.getenv("TEKMETRIC_ACCESS_TOKEN")
+SHOP_ID = os.getenv("TEKMETRIC_SHOP_ID")
+
+
+def get_customer(customer_id):
+    url = f"{BASE_URL}/customers/{customer_id}"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    try:
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            data = res.json()
+            return f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
+        else:
+            print(f"❌ Failed to get customer {customer_id}: {res.status_code} {res.text}")
+    except Exception as e:
+        print(f"❌ Exception in get_customer({customer_id}): {e}")
+    return "Unknown"
+
+
+def get_vehicle(vehicle_id):
+    url = f"{BASE_URL}/vehicles/{vehicle_id}"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    try:
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            data = res.json()
+            return f"{data.get('year', '')} {data.get('make', '')} {data.get('model', '')}".strip()
+        else:
+            print(f"❌ Failed to get vehicle {vehicle_id}: {res.status_code} {res.text}")
+    except Exception as e:
+        print(f"❌ Exception in get_vehicle({vehicle_id}): {e}")
+    return "Unknown"
+
+
+@app.get("/api/get_open_repair_orders")
+def get_open_repair_orders():
+    url = f"{BASE_URL}/repair-orders"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    params = {
+        "shop": SHOP_ID,
+        "repairOrderStatusId": [2],  # Work-In-Progress
+        "size": 100,
+        "page": 0,
+        "sort": "updatedDateStart",
+        "sortDirection": "DESC",
+    }
+
+    res = requests.get(url, headers=headers, params=params)
+
+    if res.status_code != 200:
+        return JSONResponse(status_code=500, content={"error": "Failed to fetch repair orders"})
+
+    ros = res.json().get("content", [])
+    output = []
+
+    for ro in ros:
+        ro_number = ro.get("repairOrderNumber")
+        customer_id = ro.get("customerId")
+        vehicle_id = ro.get("vehicleId")
+        last_updated = ro.get("updatedDate")
+        status = ro.get("repairOrderStatus", {}).get("name", "Unknown")
+
+        customer_name = get_customer(customer_id) if customer_id else "Unknown"
+        vehicle_info = get_vehicle(vehicle_id) if vehicle_id else "Unknown"
+
+        output.append({
+            "roNumber": ro_number,
+            "customer": customer_name,
+            "vehicle": vehicle_info,
+            "status": status,
+            "lastUpdated": last_updated,
+        })
+
+    return output
+
+@app.get("/api/get_shops", summary="Get Shops")
+async def get_shops():
+    token = await get_access_token()
+    if not token:
+        return JSONResponse(content={"error": "Unable to authenticate"}, status_code=401)
+
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
+            logger.info(f"📦 Shops response status: {resp.status_code}")
+            data = resp.json()
+            return JSONResponse(content=data)
+        except Exception as e:
+            logger.exception("❌ Failed to fetch shops")
+            return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# ✅ /api/get_open_repair_orders
+@app.get("/api/get_open_repair_orders", summary="Get Open Repair Orders")
+async def get_open_repair_orders():
+    token = await get_access_token()
+    if not token:
+        return JSONResponse(content={"error": "Unable to authenticate"}, status_code=401)
+
+    shop_id = 6212  # Replace with your real shop ID if needed
+    status_ids = [2]  # Work In Progress
+    url = (
+        f"https://shop.tekmetric.com/api/v1/repair-orders"
+        f"?shop={shop_id}&repairOrderStatusId={','.join(map(str, status_ids))}&size=50"
+    )
+
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, headers=headers)
+            logger.info(f"🛠️ Open ROs response status: {resp.status_code}")
+            data = resp.json()
+
+            if "content" not in data:
+                logger.warning(f"⚠️ Unexpected response: {json.dumps(data, indent=2)}")
+                return JSONResponse(content={"error": "Unexpected response format from Tekmetric"}, status_code=502)
+
+            ros = data["content"]
+            simplified = [
+                {
+                    "roNumber": ro.get("repairOrderNumber"),
+                    "vehicle": (
+                        f"{ro.get('vehicle', {}).get('year', 'Unknown')} "
+                        f"{ro.get('vehicle', {}).get('make', '')} "
+                        f"{ro.get('vehicle', {}).get('model', '')}"
+                    ).strip(),
+                    "customer": ro.get("customer", {}).get("fullName", "Unknown"),
+                    "status": ro.get("repairOrderStatus", {}).get("name", "Unknown"),
+                    "lastUpdated": ro.get("updatedDate")
+                }
+                for ro in ros
+            ]
+            logger.info(f"✅ Returning {len(simplified)} open ROs")
+            return JSONResponse(content=simplified)
+
+        except Exception as e:
+            logger.exception("❌ Failed to fetch open repair orders")
+            return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# ✅ /healthz
+@app.get("/healthz", summary="Health Check")
+async def healthz():
+    return {"status": "ok"}
