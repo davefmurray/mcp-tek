@@ -91,6 +91,7 @@ from routers.canned_jobs import router as canned_jobs_router
 from routers.shops_scope import router as shops_scope_router
 from routers.job_clock import router as job_clock_router
 from routers.labor import router as labor_router
+from routers.inventory import router as inventory_router
 
 app.include_router(shops_router, prefix="/api/shops", tags=["shops"])
 app.include_router(customers_router, prefix="/api/customers", tags=["customers"])
@@ -103,5 +104,7 @@ app.include_router(canned_jobs_router, prefix="/api/canned_jobs", tags=["canned_
 app.include_router(shops_scope_router, prefix="/api/shops", tags=["shops_scope"])
 app.include_router(job_clock_router, prefix="/api/jobs", tags=["job_clock"])
 app.include_router(labor_router, prefix="/api/labor", tags=["labor"])
+app.include_router(inventory_router, prefix="/api/inventory", tags=["inventory"])
+
 
 
