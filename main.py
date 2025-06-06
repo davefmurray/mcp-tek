@@ -31,7 +31,6 @@ async def get_access_token():
         "Content-Type": "application/x-www-form-urlencoded"
     }
     data = {"grant_type": "client_credentials"}
-
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{TEKMETRIC_BASE_URL}/oauth/token", headers=headers, data=data)
         res.raise_for_status()
@@ -45,7 +44,6 @@ async def health_check():
 async def get_shops():
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
-
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{TEKMETRIC_BASE_URL}/shops", headers=headers)
         res.raise_for_status()
@@ -62,14 +60,13 @@ async def get_open_repair_orders():
     }
 
     async with httpx.AsyncClient() as client:
-        ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
-        ro_res.raise_for_status()
-        ros = ro_res.json().get("content", [])
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
+        res.raise_for_status()
+        ros = res.json().get("content", [])
 
         async def hydrate_ro(ro):
             vehicle = "Unknown"
             customer = "Unknown"
-
             if ro.get("vehicleId"):
                 try:
                     v_res = await client.get(f"{TEKMETRIC_BASE_URL}/vehicles/{ro['vehicleId']}", headers=headers)
@@ -78,7 +75,6 @@ async def get_open_repair_orders():
                     vehicle = f"{v.get('year', '')} {v.get('make', '')} {v.get('model', '')}".strip()
                 except:
                     pass
-
             if ro.get("customerId"):
                 try:
                     c_res = await client.get(f"{TEKMETRIC_BASE_URL}/customers/{ro['customerId']}", headers=headers)
@@ -99,22 +95,30 @@ async def get_open_repair_orders():
 
         return await asyncio.gather(*(hydrate_ro(ro) for ro in ros))
 
+@app.get("/api/get_jobs_by_ro_number")
+async def get_jobs_by_ro_number(ro_number: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"shop": SHOP_ID, "repairOrderStatusId": [1, 2], "size": 100}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
+        res.raise_for_status()
+        ros = res.json().get("content", [])
+        match = next((ro for ro in ros if ro.get("repairOrderNumber") == ro_number), None)
+        if not match:
+            raise HTTPException(status_code=404, detail=f"RO #{ro_number} not found")
+        return await get_jobs_by_repair_order(match.get("id"))
+
 @app.get("/api/get_jobs_by_ro")
 async def get_jobs_by_repair_order(ro_id: int):
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
-    params = {
-        "shop": SHOP_ID,
-        "repairOrderId": ro_id,
-        "size": 100
-    }
-
+    params = {"shop": SHOP_ID, "repairOrderId": ro_id, "size": 100}
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{TEKMETRIC_BASE_URL}/jobs", headers=headers, params=params)
         res.raise_for_status()
         jobs = res.json().get("content", [])
-
-        job_details = []
+        output = []
         for job in jobs:
             tech_name = "Unassigned"
             if job.get("technicianId"):
@@ -125,8 +129,7 @@ async def get_jobs_by_repair_order(ro_id: int):
                     tech_name = f"{tech.get('firstName', '')} {tech.get('lastName', '')}".strip()
                 except:
                     pass
-
-            job_details.append({
+            output.append({
                 "jobName": job.get("name"),
                 "tech": tech_name,
                 "note": job.get("note"),
@@ -137,56 +140,21 @@ async def get_jobs_by_repair_order(ro_id: int):
                 "labor": job.get("labor", []),
                 "parts": job.get("parts", [])
             })
-
-        return {
-            "repairOrderId": ro_id,
-            "jobCount": len(job_details),
-            "jobs": job_details
-        }
-
-@app.get("/api/get_jobs_by_ro_number")
-async def get_jobs_by_ro_number(ro_number: int):
-    token = await get_access_token()
-    headers = {"Authorization": f"Bearer {token}"}
-    params = {
-        "shop": SHOP_ID,
-        "repairOrderStatusId": [1, 2],
-        "size": 100
-    }
-
-    async with httpx.AsyncClient() as client:
-        ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders", headers=headers, params=params)
-        ro_res.raise_for_status()
-        ros = ro_res.json().get("content", [])
-
-        match = next((ro for ro in ros if ro.get("repairOrderNumber") == ro_number), None)
-        if not match:
-            raise HTTPException(status_code=404, detail=f"RO number {ro_number} not found")
-
-        real_id = match.get("id")
-
-    return await get_jobs_by_repair_order(real_id)
+        return {"repairOrderId": ro_id, "jobCount": len(output), "jobs": output}
 
 @app.get("/api/get_customer")
 async def get_customer(search: str):
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
-    params = {
-        "shop": SHOP_ID,
-        "search": search,
-        "size": 10
-    }
-
+    params = {"shop": SHOP_ID, "search": search, "size": 10}
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{TEKMETRIC_BASE_URL}/customers", headers=headers, params=params)
         res.raise_for_status()
         customers = res.json().get("content", [])
-
         results = []
         for c in customers:
             phone = c.get("phone", [])
             phone_str = phone[0]["number"] if phone else "N/A"
-
             results.append({
                 "id": c.get("id"),
                 "name": f"{c.get('firstName', '')} {c.get('lastName', '')}".strip(),
@@ -198,9 +166,36 @@ async def get_customer(search: str):
                 "created": c.get("createdDate"),
                 "updated": c.get("updatedDate")
             })
+        return {"query": search, "matchCount": len(results), "results": results}
 
-        return {
-            "query": search,
-            "matchCount": len(results),
-            "results": results
-        }
+@app.get("/api/get_customer_by_id")
+async def get_customer_by_id(id: int):
+    token = await get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        page = 0
+        while True:
+            params = {"shop": SHOP_ID, "size": 100, "page": page}
+            res = await client.get(f"{TEKMETRIC_BASE_URL}/customers", headers=headers, params=params)
+            res.raise_for_status()
+            customers = res.json().get("content", [])
+            if not customers:
+                break
+            for c in customers:
+                if c.get("id") == id:
+                    phone = c.get("phone", [])
+                    phone_str = phone[0]["number"] if phone else "N/A"
+                    return {
+                        "id": c.get("id"),
+                        "name": f"{c.get('firstName', '')} {c.get('lastName', '')}".strip(),
+                        "email": c.get("email", "N/A"),
+                        "phone": phone_str,
+                        "okForMarketing": c.get("okForMarketing"),
+                        "notes": c.get("notes", None),
+                        "address": c.get("address", {}).get("fullAddress", "N/A"),
+                        "customerType": c.get("customerType", {}).get("name"),
+                        "created": c.get("createdDate"),
+                        "updated": c.get("updatedDate")
+                    }
+            page += 1
+        raise HTTPException(status_code=404, detail=f"Customer ID {id} not found")
