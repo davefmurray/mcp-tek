@@ -8,14 +8,16 @@ import base64
 import logging
 import json
 
-# Load environment variables from .env
+# Load .env
 load_dotenv()
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# Create FastMCP server
 mcp = FastMCP(
     name="Tekmetric API Tools",
     description="Live Tekmetric access via MCP tools.",
@@ -23,9 +25,14 @@ mcp = FastMCP(
     transport="sse",
 )
 
-# 🔐 Fetch Tekmetric token
+# Token fetcher
 async def get_access_token() -> str | None:
+    logger.info("🔐 Getting Tekmetric access token")
+    logger.info(f"CLIENT_ID: {CLIENT_ID}")
+    logger.info(f"CLIENT_SECRET: {CLIENT_SECRET}")
+
     if not CLIENT_ID or not CLIENT_SECRET:
+        logger.error("❌ CLIENT_ID or CLIENT_SECRET missing")
         return None
 
     encoded = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
@@ -42,15 +49,17 @@ async def get_access_token() -> str | None:
                 data=data,
                 headers=headers
             )
+            logger.info(f"🔑 Token response status: {resp.status_code}")
+            logger.info(f"🔑 Token response body: {await resp.aread()}")
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
-            logger.exception("Auth failed")
+            logger.exception("❌ Failed to fetch access token")
             return None
 
-# ✅ MCP Tool: get_shops
 @mcp.tool(name="get_shops", description="Get all shops linked to your Tekmetric account.")
 async def get_shops(ctx: Context) -> str:
+    logger.info("📡 get_shops tool called")
     token = await get_access_token()
     if not token:
         return json.dumps({"error": "Unable to authenticate"})
@@ -59,22 +68,22 @@ async def get_shops(ctx: Context) -> str:
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
+            logger.info(f"📦 Shops response status: {resp.status_code}")
+            logger.info(f"📦 Shops response body: {await resp.aread()}")
             resp.raise_for_status()
             return json.dumps(resp.json(), indent=2)
         except Exception as e:
+            logger.exception("❌ Failed to fetch shops")
             return json.dumps({"error": str(e)})
 
-# ✅ Health check
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ Fake route required by GPT Builder test preview
 @mcp.custom_route("/fake", methods=["GET"])
 async def fake_get(request: Request) -> JSONResponse:
     return JSONResponse({"message": "Fake endpoint exists to satisfy GPT Builder validation."})
 
-# ✅ OpenAPI 3.1.0 manifest for ChatGPT
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
@@ -103,5 +112,4 @@ async def mcp_manifest(request: Request) -> JSONResponse:
         ]
     })
 
-# 🚀 Uvicorn entrypoint
 asgi_app = mcp.sse_app
