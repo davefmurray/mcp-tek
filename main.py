@@ -8,14 +8,14 @@ import base64
 import logging
 import json
 
-# Load environment variables
+# Load environment variables from .env
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# Create MCP server
+# Create FastMCP server
 mcp = FastMCP(
     name="Tekmetric API Tools",
     description="Live Tekmetric access via MCP tools.",
@@ -23,18 +23,16 @@ mcp = FastMCP(
     transport="sse",
 )
 
-# 🔐 Get access token from Tekmetric
+# 🔐 Fetch Tekmetric token
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
 
     encoded = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
-
     headers = {
         "Authorization": f"Basic {encoded}",
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
     }
-
     data = {"grant_type": "client_credentials"}
 
     async with httpx.AsyncClient() as client:
@@ -47,10 +45,10 @@ async def get_access_token() -> str | None:
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
-            logger.exception("Failed to get access token")
+            logger.exception("Auth failed")
             return None
 
-# 🧰 Live MCP Tool: Get shops
+# ✅ MCP Tool: get_shops
 @mcp.tool(name="get_shops", description="Get all shops linked to your Tekmetric account.")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
@@ -58,7 +56,6 @@ async def get_shops(ctx: Context) -> str:
         return json.dumps({"error": "Unable to authenticate"})
 
     headers = {"Authorization": f"Bearer {token}"}
-
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
@@ -72,7 +69,12 @@ async def get_shops(ctx: Context) -> str:
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ GPT-compatible manifest
+# ✅ Fake route required by GPT Builder test preview
+@mcp.custom_route("/fake", methods=["GET"])
+async def fake_get(request: Request) -> JSONResponse:
+    return JSONResponse({"message": "Fake endpoint exists to satisfy GPT Builder validation."})
+
+# ✅ OpenAPI 3.1.0 manifest for ChatGPT
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
@@ -101,5 +103,5 @@ async def mcp_manifest(request: Request) -> JSONResponse:
         ]
     })
 
-# Entrypoint
+# 🚀 Uvicorn entrypoint
 asgi_app = mcp.sse_app
