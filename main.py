@@ -8,14 +8,14 @@ import base64
 import logging
 import json
 
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# FastMCP tool server instance
+# MCP tool server instance
 mcp = FastMCP(
     name="Tekmetric API Tools",
     description="Tools for accessing real-time Tekmetric shop data via MCP.",
@@ -23,7 +23,7 @@ mcp = FastMCP(
     transport="sse",
 )
 
-# 🔐 Get Tekmetric Access Token
+# 🔐 Tekmetric auth token request
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
@@ -50,7 +50,7 @@ async def get_access_token() -> str | None:
             logger.exception("Auth failed")
             return None
 
-# 🧰 MCP Tool: Get Shops
+# 🚗 Get shops from Tekmetric
 @mcp.tool(name="get_shops", description="Get all shops available under this Tekmetric account")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
@@ -66,12 +66,12 @@ async def get_shops(ctx: Context) -> str:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-# ✅ Health Check
+# ✅ Health check
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ MCP Manifest (what GPT looks for!)
+# ✅ MCP manifest — required by ChatGPT
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
@@ -83,5 +83,5 @@ async def mcp_manifest(request: Request) -> JSONResponse:
         }
     })
 
-# Entrypoint for Uvicorn
+# Entrypoint for uvicorn
 asgi_app = mcp.sse_app
