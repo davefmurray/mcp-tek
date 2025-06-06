@@ -817,3 +817,7 @@ async def delete_vehicle(vehicle_id: int):
 # --- Employees Router ---
 from routers.employees import router as employees_router
 app.include_router(employees_router, prefix="/api/employees", tags=["employees"])
+
+# --- Appointments Router ---
+from routers.appointments import router as appointments_router
+app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])
