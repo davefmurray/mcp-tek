@@ -831,3 +831,6 @@ app.include_router(appointments_router, prefix="/api/appointments", tags=["appoi
 from routers.customers import router as customers_router
 app.include_router(customers_router, prefix="/api/customers", tags=["customers"])
 
+# --- Repair Orders Router ---
+from routers.repair_orders import router as repair_orders_router
+app.include_router(repair_orders_router, prefix="/api/repair_orders", tags=["repair_orders"])
