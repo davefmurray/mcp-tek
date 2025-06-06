@@ -10,13 +10,11 @@ import httpx
 # Load environment variables
 load_dotenv()
 
-# Tekmetric configuration
 TEKMETRIC_BASE_URL = "https://shop.tekmetric.com/api/v1"
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 SHOP_ID = os.getenv("TEKMETRIC_SHOP_ID")
 
-# FastAPI app with OpenAPI config for ChatGPT
 app = FastAPI(
     title="Tekmetric FastAPI for GPT Integration",
     version="1.0",
@@ -26,7 +24,6 @@ app = FastAPI(
     servers=[{"url": "https://web-production-1dc1.up.railway.app"}]
 )
 
-# Enable CORS so ChatGPT can fetch OpenAPI spec
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,38 +32,25 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# Cache for token
 _token_cache = {"access_token": None, "expires_at": 0}
 
 async def get_access_token() -> str:
-    """
-    Retrieves (and caches) an OAuth2 bearer token for Tekmetric
-    using form-encoded client credentials flow.
-    """
     global _token_cache
     if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
         return _token_cache["access_token"]
     if not CLIENT_ID or not CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Missing CLIENT_ID or CLIENT_SECRET")
-
     auth_header = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
     headers = {"Authorization": f"Basic {auth_header}"}
     form = {"grant_type": "client_credentials"}
-
     async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{TEKMETRIC_BASE_URL}/oauth/token",
-            headers=headers,
-            data=form
-        )
+        res = await client.post(f"{TEKMETRIC_BASE_URL}/oauth/token", headers=headers, data=form)
         res.raise_for_status()
         token_data = res.json()
-
     access_token = token_data.get("access_token")
     expires_in = token_data.get("expires_in", 0)
     if not access_token:
         raise HTTPException(status_code=500, detail="No access_token returned")
-
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"] = time.time() + expires_in - 10
     return access_token
@@ -114,23 +98,18 @@ app.include_router(inspections_router, prefix="/api/inspections", tags=["inspect
 app.include_router(job_clock_router, prefix="/api/jobs", tags=["job_clock"])
 app.include_router(labor_router, prefix="/api/labor", tags=["labor"])
 
-# Override OpenAPI schema to remove unwanted paths and include servers
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
-    openapi_schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        routes=app.routes,
-    )
-    # Retain server definitions
+    openapi_schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
     openapi_schema["servers"] = app.servers
-    # Paths to hide from OpenAPI spec
     to_remove = [
         "/api/shops/{shop_id}",
         "/api/shops/{shop_id}/scope",
         "/api/inventory",
+        "/api/inventory/",
         "/api/inspections",
+        "/api/inspections/",
         "/api/inspections/{inspection_id}",
         "/api/jobs/{job_id}/job-clock",
         "/api/health",
