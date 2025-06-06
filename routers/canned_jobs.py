@@ -1,19 +1,26 @@
-from fastapi import APIRouter, HTTPException, Query, Body
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import List
 import httpx
 from main import get_access_token, TEKMETRIC_BASE_URL, SHOP_ID
 
 router = APIRouter()
 
+class CannedJobIdsRequest(BaseModel):
+    """
+    Request body for adding canned jobs to a repair order.
+    """
+    jobIds: List[int] = Field(..., description="List of canned job IDs to add to the repair order")
+
 @router.get("/", summary="List Canned Jobs")
 async def list_canned_jobs(
-    search: Optional[str] = Query(None, description="Filter by job name"),
-    categories: Optional[List[str]] = Query(None, description="Filter by job category codes"),
-    rates: Optional[List[str]] = Query(None, description="Filter by labor rates"),
-    sort: Optional[str] = Query(None, description="Field to sort by"),
-    sortDirection: Optional[str] = Query(None, description="Sort direction: ASC or DESC"),
-    size: int = Query(100, description="Number of results per page"),
-    page: int = Query(0, description="Page number"),
+    search: str = None,
+    categories: List[str] = None,
+    rates: List[str] = None,
+    sort: str = None,
+    sortDirection: str = None,
+    size: int = 100,
+    page: int = 0,
 ):
     """
     Returns a list of all canned jobs filtered by the provided search parameters.
@@ -31,7 +38,6 @@ async def list_canned_jobs(
         "size": size,
         "page": page,
     }
-    # Remove None params
     params = {k: v for k, v in params.items() if v is not None}
 
     async with httpx.AsyncClient() as client:
@@ -42,7 +48,7 @@ async def list_canned_jobs(
 @router.post("/repair_orders/{ro_id}", summary="Add Canned Jobs to Repair Order")
 async def add_canned_jobs_to_repair_order(
     ro_id: int,
-    job_ids: List[int] = Body(..., description="List of canned job IDs to add")
+    body: CannedJobIdsRequest
 ):
     """
     Adds given canned jobs to a repair order.
@@ -53,9 +59,8 @@ async def add_canned_jobs_to_repair_order(
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-
+    # Validate the repair order exists
     async with httpx.AsyncClient() as client:
-        # Validate the repair order exists
         ro_res = await client.get(f"{TEKMETRIC_BASE_URL}/repair-orders/{ro_id}", headers=headers)
         if ro_res.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Repair Order ID {ro_id} not found")
@@ -63,7 +68,7 @@ async def add_canned_jobs_to_repair_order(
         res = await client.post(
             f"{TEKMETRIC_BASE_URL}/repair-orders/{ro_id}/canned-jobs",
             headers=headers,
-            json=job_ids
+            json=body.jobIds
         )
         res.raise_for_status()
         return res.json()
