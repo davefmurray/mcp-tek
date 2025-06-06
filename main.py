@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 
-# Load .env vars
+# Load .env
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tekmetric")
@@ -15,7 +15,7 @@ logger = logging.getLogger("tekmetric")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# ✅ Main FastAPI app with OpenAPI servers block for GPT Builder
+# ✅ FastAPI app with GPT-compatible OpenAPI
 app = FastAPI(
     title="Tekmetric API",
     version="1.0.0",
@@ -24,7 +24,7 @@ app = FastAPI(
     ]
 )
 
-# 🔐 Get Tekmetric access token
+# 🔐 Auth helper
 async def get_access_token() -> str | None:
     logger.info("🔐 Getting Tekmetric access token")
     if not CLIENT_ID or not CLIENT_SECRET:
@@ -46,14 +46,14 @@ async def get_access_token() -> str | None:
                 headers=headers
             )
             logger.info(f"🔑 Token response status: {resp.status_code}")
-            logger.info(f"🔑 Token response body: {await resp.aread()}")
+            logger.info(f"🔑 Token body: {await resp.aread()}")
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
             logger.exception("❌ Failed to fetch access token")
             return None
 
-# ✅ REST endpoint for GPT to hit
+# ✅ Main endpoint: /api/get_shops
 @app.get("/api/get_shops", summary="Get Shops")
 async def get_shops():
     token = await get_access_token()
@@ -65,7 +65,7 @@ async def get_shops():
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
             logger.info(f"📦 Shops response status: {resp.status_code}")
-            data = await resp.json()
+            data = resp.json()  # ✅ FIXED: removed `await`
             return JSONResponse(content=data)
         except Exception as e:
             logger.exception("❌ Failed to fetch shops")
