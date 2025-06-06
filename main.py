@@ -814,14 +814,7 @@ async def delete_vehicle(vehicle_id: int):
             raise HTTPException(status_code=404, detail=f"Vehicle ID {vehicle_id} not found")
         res.raise_for_status()
         return {"detail": f"Vehicle {vehicle_id} deleted successfully"}
-# --- Employees Router ---
-from routers.employees import router as employees_router
-app.include_router(employees_router, prefix="/api/employees", tags=["employees"])
 
-# --- Appointments Router ---
-from routers.appointments import router as appointments_router
-app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])
-
-# --- Customers Router ---
-from routers.customers import router as customers_router
-app.include_router(customers_router, prefix="/api/customers", tags=["customers"])
+# --- Vehicles Router ---
+from routers.vehicles import router as vehicles_router
+app.include_router(vehicles_router, prefix="/api/vehicles", tags=["vehicles"])
