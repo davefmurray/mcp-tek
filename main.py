@@ -8,22 +8,22 @@ import base64
 import logging
 import json
 
-# Load env vars
+# Load environment variables
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# Create FastMCP app
+# Set up the MCP server
 mcp = FastMCP(
-    name="Tekmetric Tools",
-    description="Real-time tools to pull data from the Tekmetric API.",
+    name="Tekmetric API Tools",
+    description="Tools to interact with Tekmetric via API.",
     streamable=True,
     transport="sse",
 )
 
-# Token fetcher
+# 🔐 Get access token from Tekmetric
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
@@ -47,17 +47,18 @@ async def get_access_token() -> str | None:
             resp.raise_for_status()
             return resp.json().get("access_token")
         except Exception as e:
-            logger.exception("Auth failed")
+            logger.exception("Failed to get access token")
             return None
 
-# MCP tool
-@mcp.tool(name="get_shops", description="List all shops connected to this Tekmetric account")
+# 🧰 MCP Tool: Get all shops
+@mcp.tool(name="get_shops", description="Get all shops available under this Tekmetric account")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
     if not token:
         return json.dumps({"error": "Unable to authenticate"})
 
     headers = {"Authorization": f"Bearer {token}"}
+
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get("https://shop.tekmetric.com/api/v1/shops", headers=headers)
@@ -66,20 +67,21 @@ async def get_shops(ctx: Context) -> str:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-# Health check route
+# ✅ Health check
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ The OpenAI-required manifest format
+# ✅ GPT-compatible OpenAPI manifest (3.1.0 with paths + servers)
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
-        "openapi": "3.0.0",
+        "openapi": "3.1.0",
         "info": {
             "title": "Tekmetric Tool Server",
             "version": "1.0.0"
         },
+        "paths": {},
         "servers": [
             {
                 "url": "https://web-production-1dc1.up.railway.app"
@@ -87,5 +89,5 @@ async def mcp_manifest(request: Request) -> JSONResponse:
         ]
     })
 
-# Entrypoint
+# Entrypoint for uvicorn
 asgi_app = mcp.sse_app
