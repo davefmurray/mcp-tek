@@ -8,22 +8,22 @@ import base64
 import logging
 import json
 
-# Load environment variables
+# Load env vars
 load_dotenv()
 logger = logging.getLogger("mcp-tekmetric")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
-# MCP tool server instance
+# Create FastMCP app
 mcp = FastMCP(
-    name="Tekmetric API Tools",
-    description="Tools for accessing real-time Tekmetric shop data via MCP.",
+    name="Tekmetric Tools",
+    description="Real-time tools to pull data from the Tekmetric API.",
     streamable=True,
     transport="sse",
 )
 
-# 🔐 Tekmetric auth token request
+# Token fetcher
 async def get_access_token() -> str | None:
     if not CLIENT_ID or not CLIENT_SECRET:
         return None
@@ -50,8 +50,8 @@ async def get_access_token() -> str | None:
             logger.exception("Auth failed")
             return None
 
-# 🚗 Get shops from Tekmetric
-@mcp.tool(name="get_shops", description="Get all shops available under this Tekmetric account")
+# MCP tool
+@mcp.tool(name="get_shops", description="List all shops connected to this Tekmetric account")
 async def get_shops(ctx: Context) -> str:
     token = await get_access_token()
     if not token:
@@ -66,22 +66,26 @@ async def get_shops(ctx: Context) -> str:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-# ✅ Health check
+# Health check route
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-# ✅ MCP manifest — required by ChatGPT
+# ✅ The OpenAI-required manifest format
 @mcp.custom_route("/mcp", methods=["GET"])
 async def mcp_manifest(request: Request) -> JSONResponse:
     return JSONResponse({
-        "servers": {
-            "default": {
-                "type": "sse",
-                "url": "https://web-production-1dc1.up.railway.app/sse"
+        "openapi": "3.0.0",
+        "info": {
+            "title": "Tekmetric Tool Server",
+            "version": "1.0.0"
+        },
+        "servers": [
+            {
+                "url": "https://web-production-1dc1.up.railway.app"
             }
-        }
+        ]
     })
 
-# Entrypoint for uvicorn
+# Entrypoint
 asgi_app = mcp.sse_app
