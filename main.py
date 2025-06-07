@@ -10,20 +10,23 @@ import httpx
 # Load environment variables
 load_dotenv()
 
+# Tekmetric configuration
 TEKMETRIC_BASE_URL = "https://shop.tekmetric.com/api/v1"
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 SHOP_ID = os.getenv("TEKMETRIC_SHOP_ID")
 
+# FastAPI app: Swagger uses full schema at /openapi-full.json
 app = FastAPI(
     title="Tekmetric FastAPI for GPT Integration",
     version="1.0",
-    openapi_url="/openapi.json",
+    openapi_url="/openapi-full.json",
     docs_url="/docs",
     redoc_url=None,
     servers=[{"url": "https://web-production-1dc1.up.railway.app"}]
 )
 
+# Enable CORS for GPT
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,6 +35,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+# Token cache
 _token_cache = {"access_token": None, "expires_at": 0}
 
 async def get_access_token() -> str:
@@ -98,26 +102,21 @@ app.include_router(inspections_router, prefix="/api/inspections", tags=["inspect
 app.include_router(job_clock_router, prefix="/api/jobs", tags=["job_clock"])
 app.include_router(labor_router, prefix="/api/labor", tags=["labor"])
 
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    openapi_schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-    openapi_schema["servers"] = app.servers
-    to_remove = [
+# Public OpenAPI for GPT (trimmed from full)
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_for_gpt():
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    schema["servers"] = app.servers
+    remove_paths = [
         "/api/shops/{shop_id}",
         "/api/shops/{shop_id}/scope",
         "/api/inventory",
-        "/api/inventory/",
         "/api/inspections",
-        "/api/inspections/",
         "/api/inspections/{inspection_id}",
         "/api/jobs/{job_id}/job-clock",
         "/api/health",
         "/api/debug/token",
     ]
-    for path in to_remove:
-        openapi_schema["paths"].pop(path, None)
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-
-app.openapi = custom_openapi
+    for p in remove_paths:
+        schema["paths"].pop(p, None)
+    return schema
