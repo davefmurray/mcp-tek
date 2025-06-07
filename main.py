@@ -102,21 +102,25 @@ app.include_router(inspections_router, prefix="/api/inspections", tags=["inspect
 app.include_router(job_clock_router, prefix="/api/jobs", tags=["job_clock"])
 app.include_router(labor_router, prefix="/api/labor", tags=["labor"])
 
-# Public OpenAPI for GPT (trimmed from full)
+# Public OpenAPI for GPT (filtered by tag)
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_for_gpt():
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
     schema["servers"] = app.servers
-    remove_paths = [
-        "/api/shops/{shop_id}",
-        "/api/shops/{shop_id}/scope",
-        "/api/inventory",
-        "/api/inspections",
-        "/api/inspections/{inspection_id}",
-        "/api/jobs/{job_id}/job-clock",
-        "/api/health",
-        "/api/debug/token",
-    ]
-    for p in remove_paths:
-        schema["paths"].pop(p, None)
+
+    # Remove operations by tag to meet the 30-operation limit
+    unwanted_tags = {"shops_scope", "inventory", "inspections", "job_clock"}
+    paths = dict(schema["paths"])
+    for path, methods in paths.items():
+        # Check if any method under this path has unwanted tags
+        if any(
+            any(tag in unwanted_tags for tag in op.get("tags", []))
+            for op in methods.values()
+        ):
+            schema["paths"].pop(path, None)
+
+    # Also explicitly remove health and debug endpoints
+    schema["paths"].pop("/api/health", None)
+    schema["paths"].pop("/api/debug/token", None)
+
     return schema
